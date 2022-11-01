@@ -287,7 +287,7 @@ func (k *kafkaService) AssignInstanceType(owner string, organisationId string) (
 		return "", errors.NewWithCause(errors.ErrorGeneral, factoryErr, "unable to check quota")
 	}
 
-	hasRhosakQuota, err := quotaService.CheckIfQuotaIsDefinedForInstanceType(owner, organisationId, types.STANDARD)
+	hasRhosakQuota, err := quotaService.CheckIfQuotaIsDefinedForInstanceType(owner, organisationId, types.STANDARD, "")
 	if err != nil {
 		return "", err
 	}
@@ -334,7 +334,7 @@ func (k *kafkaService) reserveQuota(kafkaRequest *dbapi.KafkaRequest) (subscript
 	if factoryErr != nil {
 		return "", errors.NewWithCause(errors.ErrorGeneral, factoryErr, "unable to check quota")
 	}
-	subscriptionId, err = quotaService.ReserveQuota(kafkaRequest, types.KafkaInstanceType(kafkaRequest.InstanceType))
+	subscriptionId, err = quotaService.ReserveQuota(kafkaRequest)
 	return subscriptionId, err
 }
 
