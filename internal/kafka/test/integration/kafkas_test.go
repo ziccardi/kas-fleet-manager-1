@@ -153,6 +153,9 @@ func TestKafka_InstanceTypeCapacity(t *testing.T) {
 				{
 					Id:          "standard",
 					DisplayName: "Standard",
+					SupportedBillingModels: []config.KafkaBillingModel{
+						{ID: "standard"},
+					},
 					Sizes: []config.KafkaInstanceSize{
 						{
 							Id:                          "x1",
@@ -216,6 +219,9 @@ func TestKafka_InstanceTypeCapacity(t *testing.T) {
 				{
 					Id:          "developer",
 					DisplayName: "Trial",
+					SupportedBillingModels: []config.KafkaBillingModel{
+						{ID: "standard"},
+					},
 					Sizes: []config.KafkaInstanceSize{
 						{
 							Id:                          "x1",
