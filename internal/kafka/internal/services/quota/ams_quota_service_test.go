@@ -62,67 +62,68 @@ func Test_AMSGetBillingModel(t *testing.T) {
 		fields                   fields
 		args                     args
 		wantErr                  bool
+		wantErrMsg               string
 		wantMatch                bool
 		wantKafkaBillingModel    string
 		wantBillingModel         string
 		wantInferredBillingModel string
 	}{
-		//{
-		//	name: "standard/eval instance is requested",
-		//	args: args{
-		//		request: dbapi.KafkaRequest{
-		//			Name:         "test",
-		//			SizeId:       "x1",
-		//			BillingModel: "eval",
-		//			InstanceType: "standard",
-		//		},
-		//	},
-		//	fields: fields{
-		//		ocmClient: &ocm.ClientMock{
-		//			ClusterAuthorizationFunc: func(cb *v1.ClusterAuthorizationRequest) (*v1.ClusterAuthorizationResponse, error) {
-		//				ca, _ := v1.NewClusterAuthorizationResponse().Allowed(true).Build()
-		//				return ca, nil
-		//			},
-		//			GetOrganisationIdFromExternalIdFunc: func(externalId string) (string, error) {
-		//				return fmt.Sprintf("fake-org-id-%s", externalId), nil
-		//			},
-		//			GetQuotaCostsForProductFunc: func(organizationID, resourceName, product string) ([]*v1.QuotaCost, error) {
-		//				if product != string(ocm.RHOSAKProduct) {
-		//					return []*v1.QuotaCost{}, nil
-		//				}
-		//				rrbq := []*v1.RelatedResourceBuilder{
-		//					v1.NewRelatedResource().
-		//						BillingModel(string(v1.BillingModelMarketplace)).
-		//						Product(string(ocm.RHOSAKProduct)).
-		//						ResourceName(resourceName).
-		//						Cost(1),
-		//					v1.NewRelatedResource().
-		//						BillingModel(string(v1.BillingModelStandard)).
-		//						Product(string(ocm.RHOSAKProduct)).
-		//						ResourceName(resourceName).
-		//						Cost(1),
-		//				}
-		//
-		//				qcb, err := v1.NewQuotaCost().Allowed(1).Consumed(0).OrganizationID(organizationID).RelatedResources(rrbq...).
-		//					CloudAccounts(
-		//						v1.NewCloudAccount().CloudProviderID("aws").CloudAccountID("1234567890"),
-		//					).
-		//					Build()
-		//				if err != nil {
-		//					panic("unexpected error")
-		//				}
-		//
-		//				return []*v1.QuotaCost{qcb}, nil
-		//			},
-		//		},
-		//		kafkaConfig: &defaultKafkaConf,
-		//	},
-		//	wantErr:                  false,
-		//	wantMatch:                true,
-		//	wantKafkaBillingModel:    "eval",
-		//	wantBillingModel:         string(v1.BillingModelStandard),
-		//	wantInferredBillingModel: string(v1.BillingModelStandard),
-		//},
+		{
+			name: "standard/eval instance is requested",
+			args: args{
+				request: dbapi.KafkaRequest{
+					Name:                     "test",
+					SizeId:                   "x1",
+					DesiredKafkaBillingModel: "eval",
+					InstanceType:             "standard",
+				},
+			},
+			fields: fields{
+				ocmClient: &ocm.ClientMock{
+					ClusterAuthorizationFunc: func(cb *v1.ClusterAuthorizationRequest) (*v1.ClusterAuthorizationResponse, error) {
+						ca, _ := v1.NewClusterAuthorizationResponse().Allowed(true).Build()
+						return ca, nil
+					},
+					GetOrganisationIdFromExternalIdFunc: func(externalId string) (string, error) {
+						return fmt.Sprintf("fake-org-id-%s", externalId), nil
+					},
+					GetQuotaCostsForProductFunc: func(organizationID, resourceName, product string) ([]*v1.QuotaCost, error) {
+						if product != string(ocm.RHOSAKProduct) {
+							return []*v1.QuotaCost{}, nil
+						}
+						rrbq := []*v1.RelatedResourceBuilder{
+							v1.NewRelatedResource().
+								BillingModel(string(v1.BillingModelMarketplace)).
+								Product(string(ocm.RHOSAKProduct)).
+								ResourceName(resourceName).
+								Cost(1),
+							v1.NewRelatedResource().
+								BillingModel(string(v1.BillingModelStandard)).
+								Product(string(ocm.RHOSAKProduct)).
+								ResourceName(resourceName).
+								Cost(1),
+						}
+
+						qcb, err := v1.NewQuotaCost().Allowed(1).Consumed(0).OrganizationID(organizationID).RelatedResources(rrbq...).
+							CloudAccounts(
+								v1.NewCloudAccount().CloudProviderID("aws").CloudAccountID("1234567890"),
+							).
+							Build()
+						if err != nil {
+							panic("unexpected error")
+						}
+
+						return []*v1.QuotaCost{qcb}, nil
+					},
+				},
+				kafkaConfig: &defaultKafkaConf,
+			},
+			wantErr:                  false,
+			wantMatch:                true,
+			wantKafkaBillingModel:    "eval",
+			wantBillingModel:         string(v1.BillingModelStandard),
+			wantInferredBillingModel: "eval",
+		},
 		{
 			name: "aws marketplace billing model is detected",
 			args: args{
@@ -562,10 +563,11 @@ func Test_AMSGetBillingModel(t *testing.T) {
 				},
 				kafkaConfig: &defaultKafkaConf,
 			},
-			wantErr:                  false,
+			wantErr:                  true,
+			wantErrMsg:               "KAFKAS-MGMT-120: unable to detect billing model\n caused by: KAFKAS-MGMT-120: Insufficient quota: marketplace value 'aws' is not compatible with billing model 'standard'",
 			wantMatch:                false,
-			wantKafkaBillingModel:    string(v1.BillingModelMarketplace),
-			wantBillingModel:         string(v1.BillingModelMarketplaceAWS),
+			wantKafkaBillingModel:    "",
+			wantBillingModel:         "",
 			wantInferredBillingModel: "",
 		},
 		{
@@ -607,10 +609,11 @@ func Test_AMSGetBillingModel(t *testing.T) {
 				},
 				kafkaConfig: &defaultKafkaConf,
 			},
-			wantErr:                  false,
+			wantErr:                  true,
+			wantErrMsg:               "Insufficient quota: no quota available for any of the matched kafka billing models [marketplace]",
 			wantMatch:                false,
-			wantKafkaBillingModel:    string(v1.BillingModelStandard),
-			wantBillingModel:         string(v1.BillingModelStandard),
+			wantKafkaBillingModel:    "",
+			wantBillingModel:         "",
 			wantInferredBillingModel: "",
 		},
 	}
@@ -622,8 +625,11 @@ func Test_AMSGetBillingModel(t *testing.T) {
 			factory := NewDefaultQuotaServiceFactory(tt.fields.ocmClient, nil, nil, tt.fields.kafkaConfig)
 			quotaService, _ := factory.GetQuotaService(api.AMSQuotaType)
 
-			kafkaBillingModel, billingModel, err := quotaService.(*amsQuotaService).getBillingModel(&tt.args.request, types.STANDARD)
-			g.Expect(err != nil).To(gomega.Equal(tt.wantErr))
+			kafkaBillingModel, billingModel, err := quotaService.(*amsQuotaService).getBillingModel(&tt.args.request)
+			g.Expect(err != nil).To(gomega.Equal(tt.wantErr), "Unexpected error value %v", err)
+			if tt.wantErrMsg != "" {
+				g.Expect(err.Error()).To(gomega.ContainSubstring(tt.wantErrMsg))
+			}
 			g.Expect(billingModel).To(gomega.Equal(tt.wantBillingModel))
 			g.Expect(kafkaBillingModel.ID).To(gomega.Equal(tt.wantKafkaBillingModel))
 
@@ -771,7 +777,7 @@ func Test_AMSValidateBillingAccount(t *testing.T) {
 
 func Test_AMSCheckQuota(t *testing.T) {
 	type fields struct {
-		ocmClient   ocm.Client
+		ocmClient   *ocm.ClientMock
 		kafkaConfig *config.KafkaConfig
 	}
 	type args struct {
@@ -947,13 +953,19 @@ func Test_AMSCheckQuota(t *testing.T) {
 			g.Expect(err1).ToNot(gomega.HaveOccurred())
 			sq, err := quotaService.CheckIfQuotaIsDefinedForInstanceType(kafka.Owner, kafka.OrganisationId, types.STANDARD, bm)
 			g.Expect(err).ToNot(gomega.HaveOccurred())
+			g.Expect(tt.fields.ocmClient.GetQuotaCostsForProductCalls()).To(gomega.HaveLen(1))
+			g.Expect(tt.fields.ocmClient.GetQuotaCostsForProductCalls()[0].ResourceName).To(gomega.Equal("rhosak"))
+			g.Expect(tt.fields.ocmClient.GetQuotaCostsForProductCalls()[0].Product).To(gomega.Equal("RHOSAK"))
 			g.Expect(sq).To(gomega.Equal(tt.args.hasStandardQuota))
 			// FIXME when implementing support for KAFKA BILLING MODEL
-			eq, err := quotaService.CheckIfQuotaIsDefinedForInstanceType(kafka.Owner, kafka.OrganisationId, types.DEVELOPER, config.KafkaBillingModel{})
+			bm, err1 = tt.fields.kafkaConfig.GetBillingModelByID(types.DEVELOPER.String(), "trial")
+			eq, err := quotaService.CheckIfQuotaIsDefinedForInstanceType(kafka.Owner, kafka.OrganisationId, types.DEVELOPER, bm)
 			g.Expect(err).ToNot(gomega.HaveOccurred())
 			fmt.Printf("eq is %v\n", eq)
 			g.Expect(eq).To(gomega.Equal(tt.args.hasDeveloperQuota))
-
+			g.Expect(tt.fields.ocmClient.GetQuotaCostsForProductCalls()).To(gomega.HaveLen(2))
+			g.Expect(tt.fields.ocmClient.GetQuotaCostsForProductCalls()[1].ResourceName).To(gomega.Equal("rhosak"))
+			g.Expect(tt.fields.ocmClient.GetQuotaCostsForProductCalls()[1].Product).To(gomega.Equal("RHOSAKTrial"))
 			_, err = quotaService.ReserveQuota(kafka)
 			g.Expect(err != nil).To(gomega.Equal(tt.wantErr))
 		})
@@ -1510,16 +1522,16 @@ func Test_AMSReserveQuota(t *testing.T) {
 
 			g.Expect(kafka.DesiredKafkaBillingModel).To(gomega.Equal(tt.wantDesiredKafkaBillingModel))
 			g.Expect(kafka.ActualKafkaBillingModel).To(gomega.Equal(tt.wantActualKafkaBillingModel))
-			g.Expect(err != nil).To(gomega.Equal(tt.wantErr))
+			g.Expect(err != nil).To(gomega.Equal(tt.wantErr), "Unexpected error value '%v'", err)
 			g.Expect(subId).To(gomega.Equal(tt.wantSubscriptionID))
-			if tt.wantAMSBillingModel != "" {
+			if tt.wantDesiredKafkaBillingModel != "" {
 				ocmClientMock := tt.fields.ocmClient.(*ocm.ClientMock)
 				clusterAuthorizationCalls := ocmClientMock.ClusterAuthorizationCalls()
 				g.Expect(len(clusterAuthorizationCalls)).To(gomega.Equal(1))
 				clusterAuthorizationResources := clusterAuthorizationCalls[0].Cb.Resources()
 				g.Expect(clusterAuthorizationResources).To(gomega.HaveLen(1))
 				clusterAuthorizationResource := clusterAuthorizationResources[0]
-				g.Expect(clusterAuthorizationResource.BillingModel()).To(gomega.BeEquivalentTo(tt.wantAMSBillingModel))
+				g.Expect(clusterAuthorizationResource.BillingModel()).To(gomega.BeEquivalentTo(tt.wantDesiredKafkaBillingModel))
 			}
 		})
 	}

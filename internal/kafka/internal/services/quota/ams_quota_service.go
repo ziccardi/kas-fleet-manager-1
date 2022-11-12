@@ -87,26 +87,7 @@ var supportedAMSRelatedResourceBillingModels = map[string]struct{}{
 // marketplace or standard billing
 func (q amsQuotaService) billingModelMatches(computedBillingModel string, requestedBillingModel string, kafkaBillingModel config.KafkaBillingModel) (bool, string) {
 	// billing model is an optional parameter, infer the value from AMS if not provided
-	if requestedBillingModel == "" && computedBillingModel == string(amsv1.BillingModelStandard) && kafkaBillingModel.HasSupportForAMSBillingModel(computedBillingModel) {
-		return true, string(amsv1.BillingModelStandard)
-	}
-
-	if requestedBillingModel == "" && arrays.Contains(supportedMarketplaceBillingModels, computedBillingModel) && kafkaBillingModel.HasSupportForAMSBillingModel(computedBillingModel) {
-		return true, string(amsv1.BillingModelMarketplace)
-	}
-
-	// user requested pre-paid billing and it matches the computed billing model
-	if computedBillingModel == string(amsv1.BillingModelStandard) && requestedBillingModel == string(amsv1.BillingModelStandard) && kafkaBillingModel.HasSupportForAMSBillingModel(computedBillingModel) {
-		return true, string(amsv1.BillingModelStandard)
-	}
-
-	// user requested consumption based billing and it matches the computed billing model
-	if arrays.Contains(supportedMarketplaceBillingModels, computedBillingModel) && requestedBillingModel == string(amsv1.BillingModelMarketplace) && kafkaBillingModel.HasSupportForAMSBillingModel(computedBillingModel) {
-		return true, string(amsv1.BillingModelMarketplace)
-	}
-
-	// computed and requested billing models do not match
-	return false, ""
+	return (kafkaBillingModel.ID == requestedBillingModel || requestedBillingModel == "") && kafkaBillingModel.HasSupportForAMSBillingModel(computedBillingModel), kafkaBillingModel.ID
 }
 
 func (q amsQuotaService) validateBillingAccount(organisationId string, instanceType types.KafkaInstanceType, kafkaBillingModel config.KafkaBillingModel, billingCloudAccountId string, marketplace *string) *errors.ServiceError {
@@ -185,8 +166,6 @@ func (q amsQuotaService) ValidateBillingAccount(organisationId string, instanceT
 	return errors.InvalidBillingAccount("we have not been able to validate your billingAccountID")
 }
 
-// TODO: added the `billing model` parameter to the QuotaService interface when adding KafkaBillingModel support to the QUOTA-LIST
-// The parameter is currently unused for AMSQuota management: will be used in a subsequent PR when KafkaBillingModel support will be added.
 func (q amsQuotaService) CheckIfQuotaIsDefinedForInstanceType(username string, externalId string, instanceType types.KafkaInstanceType, kafkaBillingModel config.KafkaBillingModel) (bool, *errors.ServiceError) {
 	orgId, err := q.amsClient.GetOrganisationIdFromExternalId(externalId)
 	if err != nil {
@@ -236,7 +215,7 @@ func (q amsQuotaService) hasConfiguredQuotaCost(organizationID string, kafkaBill
 	return false, nil
 }
 
-func (q amsQuotaService) getBillingModel(kafka *dbapi.KafkaRequest, instanceType types.KafkaInstanceType) (config.KafkaBillingModel, string, error) {
+func (q amsQuotaService) getBillingModel(kafka *dbapi.KafkaRequest) (config.KafkaBillingModel, string, error) {
 	orgId, err := q.amsClient.GetOrganisationIdFromExternalId(kafka.OrganisationId)
 	if err != nil {
 		return config.KafkaBillingModel{}, "", errors.NewWithCause(errors.ErrorGeneral, err, fmt.Sprintf("Error checking quota: failed to get organization with external id %v", orgId))
@@ -244,7 +223,7 @@ func (q amsQuotaService) getBillingModel(kafka *dbapi.KafkaRequest, instanceType
 
 	resolver := utils.NewBillingModelResolver(q.amsClient, q.kafkaConfig)
 
-	resolvedBillingModel, err := resolver.Resolve(orgId, kafka, instanceType)
+	resolvedBillingModel, err := resolver.Resolve(orgId, kafka)
 
 	if err != nil {
 		return config.KafkaBillingModel{}, "", errors.NewWithCause(errors.ErrorInsufficientQuota, err, fmt.Sprintf("unable to detect billing model"))
@@ -254,7 +233,6 @@ func (q amsQuotaService) getBillingModel(kafka *dbapi.KafkaRequest, instanceType
 }
 
 func (q amsQuotaService) ReserveQuota(kafka *dbapi.KafkaRequest) (string, *errors.ServiceError) {
-	instanceType := types.KafkaInstanceType(kafka.InstanceType)
 	kafkaId := kafka.ID
 
 	kafkaInstanceSize, e := q.kafkaConfig.GetKafkaInstanceSize(kafka.InstanceType, kafka.SizeId)
@@ -262,7 +240,7 @@ func (q amsQuotaService) ReserveQuota(kafka *dbapi.KafkaRequest) (string, *error
 		return "", errors.NewWithCause(errors.ErrorGeneral, e, "Error reserving quota")
 	}
 
-	kafkaBillingModel, bm, err := q.getBillingModel(kafka, instanceType)
+	kafkaBillingModel, bm, err := q.getBillingModel(kafka)
 	if err != nil {
 		svcErr := errors.ToServiceError(err)
 		return "", errors.NewWithCause(svcErr.Code, svcErr, "Error getting billing model")
@@ -271,13 +249,17 @@ func (q amsQuotaService) ReserveQuota(kafka *dbapi.KafkaRequest) (string, *error
 		return "", errors.InsufficientQuotaError("Error getting billing model: No available billing model found")
 	}
 
-	bmMatched, matchedBillingModel := q.billingModelMatches(bm, kafka.DesiredKafkaBillingModel, kafkaBillingModel)
+	bmMatched, _ := q.billingModelMatches(bm, kafka.DesiredKafkaBillingModel, kafkaBillingModel)
 	if !bmMatched {
 		return "", errors.InvalidBillingAccount("requested billing model does not match assigned. requested: %s, assigned: %s", kafka.DesiredKafkaBillingModel, bm)
 	}
 	// TODO find a better place to update it as it is a side-effect in nested code
-	kafka.DesiredKafkaBillingModel = matchedBillingModel
+	kafka.DesiredKafkaBillingModel = kafkaBillingModel.ID
 
+	// TODO: is this needed?
+	if kafka.CloudProvider == cloudproviders.GCP.String() && bm == "marketplace-rhm" {
+		bm = "marketplace"
+	}
 	// For Kafka requests to be provisioned on GCP currently the only supported
 	// AMS billing models are standard or Red Hat Marketplace ("marketplace").
 	// If the AMS billing model to be requested is none of those we return an error.
@@ -319,7 +301,7 @@ func (q amsQuotaService) ReserveQuota(kafka *dbapi.KafkaRequest) (string, *error
 	}
 
 	// TODO find a better place to update it as it is a side-effect in nested code
-	kafka.ActualKafkaBillingModel = matchedBillingModel
+	kafka.ActualKafkaBillingModel = kafkaBillingModel.ID
 
 	return resp.Subscription().ID(), nil
 }

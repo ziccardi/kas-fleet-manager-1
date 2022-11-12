@@ -3,7 +3,6 @@ package utils
 import (
 	"github.com/bf2fc6cc711aee1a0c2a/kas-fleet-manager/internal/kafka/internal/api/dbapi"
 	"github.com/bf2fc6cc711aee1a0c2a/kas-fleet-manager/internal/kafka/internal/config"
-	"github.com/bf2fc6cc711aee1a0c2a/kas-fleet-manager/internal/kafka/internal/kafkas/types"
 	"github.com/bf2fc6cc711aee1a0c2a/kas-fleet-manager/pkg/errors"
 	"github.com/bf2fc6cc711aee1a0c2a/kas-fleet-manager/pkg/shared/utils/arrays"
 	amsv1 "github.com/openshift-online/ocm-sdk-go/accountsmgmt/v1"
@@ -20,21 +19,25 @@ func (s *simpleBillingModelResolver) SupportRequest(kafka *dbapi.KafkaRequest) b
 	return kafka.BillingCloudAccountId == "" && kafka.Marketplace == ""
 }
 
-func (r *simpleBillingModelResolver) Resolve(orgId string, kafka *dbapi.KafkaRequest, instanceType types.KafkaInstanceType) (BillingModelDetails, error) {
-	kafkaInstanceSize, err := r.kafkaConfig.GetKafkaInstanceSize(kafka.InstanceType, kafka.SizeId)
-	if err != nil {
-		return BillingModelDetails{}, errors.NewWithCause(errors.ErrorGeneral, err, "Error reserving quota")
-	}
-
+func (r *simpleBillingModelResolver) Resolve(orgId string, kafka *dbapi.KafkaRequest) (BillingModelDetails, error) {
 	// try standard and marketplace
 	var kafkaBillingModels []config.KafkaBillingModel
-	standardBillingModel, err := r.kafkaConfig.GetBillingModelByID(instanceType.String(), "standard")
+	standardBillingModel, err := r.kafkaConfig.GetBillingModelByID(kafka.InstanceType, "standard")
 	if err == nil {
 		kafkaBillingModels = append(kafkaBillingModels, standardBillingModel)
 	}
-	marketplaceBillingModel, err := r.kafkaConfig.GetBillingModelByID(instanceType.String(), "marketplace")
+	marketplaceBillingModel, err := r.kafkaConfig.GetBillingModelByID(kafka.InstanceType, "marketplace")
 	if err == nil {
 		kafkaBillingModels = append(kafkaBillingModels, marketplaceBillingModel)
+	}
+
+	return r.resolve(orgId, kafka, kafkaBillingModels)
+}
+
+func (r *simpleBillingModelResolver) resolve(orgId string, kafka *dbapi.KafkaRequest, kafkaBillingModels []config.KafkaBillingModel) (BillingModelDetails, error) {
+	kafkaInstanceSize, err := r.kafkaConfig.GetKafkaInstanceSize(kafka.InstanceType, kafka.SizeId)
+	if err != nil {
+		return BillingModelDetails{}, errors.NewWithCause(errors.ErrorGeneral, err, "Error reserving quota")
 	}
 
 	for _, kbm := range kafkaBillingModels {
@@ -58,7 +61,9 @@ func (r *simpleBillingModelResolver) Resolve(orgId string, kafka *dbapi.KafkaReq
 		}
 	}
 
-	return BillingModelDetails{}, errors.InsufficientQuotaError("unable to resolve billing model")
+	return BillingModelDetails{}, errors.InsufficientQuotaError("no quota available for any of the matched kafka billing models %v",
+		arrays.Map(kafkaBillingModels, func(kbm config.KafkaBillingModel) string { return kbm.ID }),
+	)
 }
 
 func (r *simpleBillingModelResolver) resolveMarketplaceType(orgId string, kafka *dbapi.KafkaRequest, kafkaBillingModel config.KafkaBillingModel, amsBillingModel string) (string, error) {

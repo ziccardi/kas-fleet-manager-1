@@ -3,7 +3,6 @@ package utils
 import (
 	"github.com/bf2fc6cc711aee1a0c2a/kas-fleet-manager/internal/kafka/internal/api/dbapi"
 	"github.com/bf2fc6cc711aee1a0c2a/kas-fleet-manager/internal/kafka/internal/config"
-	"github.com/bf2fc6cc711aee1a0c2a/kas-fleet-manager/internal/kafka/internal/kafkas/types"
 	"github.com/bf2fc6cc711aee1a0c2a/kas-fleet-manager/pkg/errors"
 )
 
@@ -15,19 +14,19 @@ type cloudAccountBillingModelResolver struct {
 }
 
 func (r *cloudAccountBillingModelResolver) SupportRequest(kafka *dbapi.KafkaRequest) bool {
-	//_, err := r.kafkaConfig.GetBillingModelByID(kafka.InstanceType, "marketplace")
-	//if err != nil {
-	//	return false
-	//}
 	return kafka.BillingCloudAccountId != ""
 }
 
-func (r *cloudAccountBillingModelResolver) Resolve(orgId string, kafka *dbapi.KafkaRequest, instanceType types.KafkaInstanceType) (BillingModelDetails, error) {
-	kafkaBillingModel, err := r.kafkaConfig.GetBillingModelByID(instanceType.String(), "marketplace")
+func (r *cloudAccountBillingModelResolver) Resolve(orgId string, kafka *dbapi.KafkaRequest) (BillingModelDetails, error) {
+	kafkaBillingModel, err := r.kafkaConfig.GetBillingModelByID(kafka.InstanceType, "marketplace")
 	if err != nil {
 		return BillingModelDetails{}, err
 	}
 
+	return r.resolve(orgId, kafka, kafkaBillingModel)
+}
+
+func (r *cloudAccountBillingModelResolver) resolve(orgId string, kafka *dbapi.KafkaRequest, kafkaBillingModel config.KafkaBillingModel) (BillingModelDetails, error) {
 	kafkaInstanceSize, err := r.kafkaConfig.GetKafkaInstanceSize(kafka.InstanceType, kafka.SizeId)
 	if err != nil {
 		return BillingModelDetails{}, errors.NewWithCause(errors.ErrorGeneral, err, "Error reserving quota")

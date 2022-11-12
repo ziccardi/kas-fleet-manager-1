@@ -42,7 +42,11 @@ func (kbm *KafkaBillingModel) HasSupportForAMSBillingModel(amsBillingModel strin
 }
 
 func (kbm *KafkaBillingModel) HasSupportForMarketplace() bool {
-	return arrays.AnyMatch(kbm.AMSBillingModels, func(amsBm string) bool { return strings.HasPrefix(amsBm, "marketplace-") })
+	return arrays.AnyMatch(kbm.AMSBillingModels, arrays.StringHasPrefixIgnoreCasePredicate("marketplace-"))
+}
+
+func (kbm *KafkaBillingModel) HasSupportForStandard() bool {
+	return arrays.AnyMatch(kbm.AMSBillingModels, arrays.StringEqualsIgnoreCasePredicate("standard"))
 }
 
 func (kp *KafkaInstanceType) GetKafkaInstanceSizeByID(sizeId string) (*KafkaInstanceSize, error) {

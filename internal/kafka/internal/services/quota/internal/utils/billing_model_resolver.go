@@ -3,7 +3,6 @@ package utils
 import (
 	"github.com/bf2fc6cc711aee1a0c2a/kas-fleet-manager/internal/kafka/internal/api/dbapi"
 	"github.com/bf2fc6cc711aee1a0c2a/kas-fleet-manager/internal/kafka/internal/config"
-	"github.com/bf2fc6cc711aee1a0c2a/kas-fleet-manager/internal/kafka/internal/kafkas/types"
 	"github.com/bf2fc6cc711aee1a0c2a/kas-fleet-manager/pkg/errors"
 	amsv1 "github.com/openshift-online/ocm-sdk-go/accountsmgmt/v1"
 )
@@ -18,7 +17,7 @@ var supportedCloudProviders = []string{CloudProviderAWS, CloudProviderRHM, Cloud
 
 type BillingModelResolver interface {
 	SupportRequest(kafka *dbapi.KafkaRequest) bool
-	Resolve(orgID string, kafka *dbapi.KafkaRequest, instanceType types.KafkaInstanceType) (BillingModelDetails, error)
+	Resolve(orgID string, kafka *dbapi.KafkaRequest) (BillingModelDetails, error)
 }
 
 func NewBillingModelResolver(quotaConfigProvider AMSQuotaConfigProvider, kafkaConfig *config.KafkaConfig) BillingModelResolver {
@@ -36,9 +35,13 @@ type billingModelResolver struct {
 	KafkaConfig         *config.KafkaConfig
 }
 
-func (bmr *billingModelResolver) Resolve(orgID string, kafka *dbapi.KafkaRequest, instanceType types.KafkaInstanceType) (BillingModelDetails, error) {
+func (bmr *billingModelResolver) Resolve(orgID string, kafka *dbapi.KafkaRequest) (BillingModelDetails, error) {
 
 	resolvers := []BillingModelResolver{
+		&kafkaBillingModelResolver{
+			quotaConfigProvider: bmr.QuotaConfigProvider,
+			kafkaConfig:         bmr.KafkaConfig,
+		},
 		&simpleBillingModelResolver{
 			quotaConfigProvider: bmr.QuotaConfigProvider,
 			kafkaConfig:         bmr.KafkaConfig,
@@ -51,7 +54,7 @@ func (bmr *billingModelResolver) Resolve(orgID string, kafka *dbapi.KafkaRequest
 
 	for _, resolver := range resolvers {
 		if resolver.SupportRequest(kafka) {
-			return resolver.Resolve(orgID, kafka, instanceType)
+			return resolver.Resolve(orgID, kafka)
 		}
 	}
 
