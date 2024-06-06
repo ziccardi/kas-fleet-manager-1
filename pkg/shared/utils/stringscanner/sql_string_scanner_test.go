@@ -81,6 +81,30 @@ func Test_SQLStringScanner(t *testing.T) {
 				{TokenType: LITERAL, Value: "3", Position: 61},
 			},
 		},
+		{
+			name:  "Test SQL with JSONB",
+			value: `select * from table where manifest->'data'->'manifest'->'metadata'->'labels'->>'foo' = 'bar'`,
+			expectedTokens: []Token{
+				{TokenType: LITERAL, Value: "select", Position: 0},
+				{TokenType: LITERAL, Value: "*", Position: 7},
+				{TokenType: LITERAL, Value: "from", Position: 9},
+				{TokenType: LITERAL, Value: "table", Position: 14},
+				{TokenType: LITERAL, Value: "where", Position: 20},
+				{TokenType: LITERAL, Value: "manifest", Position: 26},
+				{TokenType: OP, Value: "->", Position: 34},
+				{TokenType: LITERAL, Value: "'data'", Position: 36},
+				{TokenType: OP, Value: "->", Position: 42},
+				{TokenType: LITERAL, Value: "'manifest'", Position: 44},
+				{TokenType: OP, Value: "->", Position: 54},
+				{TokenType: LITERAL, Value: "'metadata'", Position: 56},
+				{TokenType: OP, Value: "->", Position: 66},
+				{TokenType: LITERAL, Value: "'labels'", Position: 68},
+				{TokenType: OP, Value: "->>", Position: 76},
+				{TokenType: LITERAL, Value: "'foo'", Position: 79},
+				{TokenType: OP, Value: "=", Position: 85},
+				{TokenType: LITERAL, Value: "'bar'", Position: 87},
+			},
+		},
 	}
 	for _, testcase := range tests {
 		tt := testcase

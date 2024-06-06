@@ -40,6 +40,14 @@ const (
 	and                    = "AND"
 	or                     = "OR"
 	not                    = "NOT"
+
+	// Define the names of the tokens to be parsed
+
+	jsonbFamily           = "JSONB"                    // Each JSONB token will be associated to the JSONB family
+	jsonbField            = "JSON_FIELD"               // Each JSONB field
+	jsonbArrow            = "JSONB_ARROW"              // The JSONB arrow token (->)
+	jsonbToString         = "JSONB_TOSTRING"           // The JSONB to-string token (->>)
+	jsonbFieldToStringify = "JSONB_FIELD_TO_STRINGIFY" // The field that will contain the `string` value, ie: ->> FIELD
 )
 const MaximumComplexity = 10
 
@@ -68,20 +76,24 @@ var _ QueryParser = &queryParser{}
 // Tokens:
 // OPEN_BRACE       = (
 // CLOSED_BRACE     = )
-// COLUMN -         = [A-Za-z][A-Za-z0-9_]*
+// COLUMN           = [A-Za-z][A-Za-z0-9_]*
 // VALUE            = [^ ^(^)]+
-// QUOTED_VALUE     = `'([^']|\\')*'`
+// QUOTED_VALUE     = '([^']|\\')*'
 // EQ               = =
 // NOT_EQ           = <>
 // LIKE             = [Ll][Ii][Kk][Ee]
 // ILIKE             = [Ii][Ll][Ii][Kk][Ee]
 // AND              = [Aa][Nn][Dd]
 // OR               = [Oo][Rr]
+// JSONB_ARROW      = ->
+// JSONB_TOSTRING   = ->>
+// JSONB_FIELD      = '([^']|\\')*' (example: 'manifest'). The syntax is the same of a quoted string.
+// JSONB_STRING_FLD = '([^']|\\')*' (example: 'foo'). The syntax is the same of a quoted value.
 //
 // VALID TRANSITIONS:
 // START        -> COLUMN | OPEN_BRACE
 // OPEN_BRACE   -> OPEN_BRACE | COLUMN
-// COLUMN       -> EQ | NOT_EQ | LIKE | ILIKE
+// COLUMN       -> EQ | NOT_EQ | LIKE | ILIKE | JSONB_ARROW
 // EQ           -> VALUE | QUOTED_VALUE
 // NOT_EQ       -> VALUE | QUOTED_VALUE
 // LIKE         -> VALUE | QUOTED_VALUE
@@ -96,6 +108,10 @@ var _ QueryParser = &queryParser{}
 // CLOSED_BRACE -> OR | AND | CLOSED_BRACE | [END]
 // AND          -> COLUMN | OPEN_BRACE
 // OR           -> COLUMN | OPEN_BRACE
+// JSONB_ARROW      -> JSONB_FIELD
+// JSONB_FIELD      -> JSONB_ARROW | JSONB_TOSTRING
+// JSONB_TOSTRING   -> JSONB_STRING_FLD
+// JSONB_STRING_FLD -> EQ | NOT_EQ | LIKE | ILIKE | IN | NOT
 func (p *queryParser) initStateMachine() (*state_machine.State, checkUnbalancedBraces) {
 
 	// counts the number of joins
@@ -183,11 +199,15 @@ func (p *queryParser) initStateMachine() (*state_machine.State, checkUnbalancedB
 			{Name: and, Family: logicalOpTokenFamily, AcceptPattern: `[Aa][Nn][Dd]`},
 			{Name: or, Family: logicalOpTokenFamily, AcceptPattern: `[Oo][Rr]`},
 			{Name: not, Family: logicalOpTokenFamily, AcceptPattern: `[Nn][Oo][Tt]`},
+			{Name: jsonbArrow, Family: jsonbFamily, AcceptPattern: `->`},
+			{Name: jsonbField, Family: jsonbFamily, AcceptPattern: `'([^']|\\')*'`},
+			{Name: jsonbToString, Family: jsonbFamily, AcceptPattern: `->>`},
+			{Name: jsonbFieldToStringify, Family: jsonbFamily, AcceptPattern: `'([^']|\\')*'`},
 		},
 		Transitions: []state_machine.TokenTransitions{
 			{TokenName: state_machine.StartState, ValidTransitions: []string{column, openBrace}},
 			{TokenName: openBrace, ValidTransitions: []string{column, openBrace}},
-			{TokenName: column, ValidTransitions: []string{eq, notEq, like, ilike, in, not}},
+			{TokenName: column, ValidTransitions: []string{eq, notEq, like, ilike, in, not, jsonbArrow}},
 			{TokenName: eq, ValidTransitions: []string{quotedValue, value}},
 			{TokenName: notEq, ValidTransitions: []string{quotedValue, value}},
 			{TokenName: like, ValidTransitions: []string{quotedValue, value}},
@@ -203,6 +223,10 @@ func (p *queryParser) initStateMachine() (*state_machine.State, checkUnbalancedB
 			{TokenName: quotedValueInList, ValidTransitions: []string{comma, closedBrace}},
 			{TokenName: valueInList, ValidTransitions: []string{comma, closedBrace}},
 			{TokenName: comma, ValidTransitions: []string{quotedValueInList, valueInList}},
+			{TokenName: jsonbArrow, ValidTransitions: []string{jsonbField}},
+			{TokenName: jsonbField, ValidTransitions: []string{jsonbArrow, jsonbToString}},
+			{TokenName: jsonbToString, ValidTransitions: []string{jsonbFieldToStringify}},
+			{TokenName: jsonbFieldToStringify, ValidTransitions: []string{eq, notEq, like, ilike, in, not}},
 		},
 	}
 

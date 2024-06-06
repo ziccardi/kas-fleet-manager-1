@@ -8,12 +8,13 @@ import (
 
 func Test_QueryParser(t *testing.T) {
 	tests := []struct {
-		name      string
-		qry       string
-		qryParser QueryParser
-		outQry    string
-		outValues []interface{}
-		wantErr   bool
+		name       string
+		qry        string
+		qryParser  QueryParser
+		outQry     string
+		outValues  []interface{}
+		wantErr    bool
+		errMessage string
 	}{
 		{
 			name:      "Testing just `=` sign",
@@ -160,6 +161,36 @@ func Test_QueryParser(t *testing.T) {
 			wantErr:   false,
 		},
 		{
+			name:      "JSONB query",
+			qry:       `manifest->'data'->'manifest'->'metadata'->'labels'->>'foo' = 'bar'`,
+			qryParser: NewQueryParser("manifest"),
+			outQry:    "manifest -> 'data' -> 'manifest' -> 'metadata' -> 'labels' ->> 'foo' = ?",
+			outValues: []interface{}{"bar"},
+			wantErr:   false,
+		},
+		{
+			name:       "Invalid JSONB query",
+			qry:        `manifest->'data'->'manifest'->'metadata'->'labels'->'foo' = 'bar'`,
+			qryParser:  NewQueryParser("manifest"),
+			outQry:     "manifest -> 'data' -> 'manifest' -> 'metadata' -> 'labels' ->> 'foo' = ?",
+			outValues:  nil,
+			wantErr:    true,
+			errMessage: "[59] error parsing the filter: unexpected token `=`",
+		},
+		{
+			name: "Complex JSONB query",
+			qry: `manifest->'data'->'manifest'->'metadata'->'labels'->>'foo' = 'bar' and ` +
+				`( manifest->'data'->'manifest' ->> 'foo' in ('value1', 'value2') or ` +
+				`manifest->'data'->'manifest'->>'labels' <> 'foo1')`,
+			qryParser: NewQueryParser("manifest"),
+			outQry: "manifest -> 'data' -> 'manifest' -> 'metadata' -> 'labels' ->> 'foo' = ? and " +
+				"(manifest -> 'data' -> 'manifest' ->> 'foo' in( ? , ?) or " +
+				"manifest -> 'data' -> 'manifest' ->> 'labels' <> ?)",
+			outValues: []interface{}{"bar", "value1", "value2", "foo1"},
+			wantErr:   false,
+		},
+
+		{
 			name: "10 JOINS (maximum allowed)",
 			qry: "name = value1 " +
 				"and name = value2 " +
@@ -243,6 +274,10 @@ func Test_QueryParser(t *testing.T) {
 				if tt.outValues != nil {
 					g.Expect(qry.Values).To(gomega.Equal(tt.outValues))
 				}
+			}
+
+			if err != nil && tt.wantErr && tt.errMessage != "" {
+				g.Expect(err.Error()).To(gomega.Equal(tt.errMessage))
 			}
 		})
 	}

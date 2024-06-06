@@ -60,6 +60,8 @@ func (s *scanner) Init(txt string) {
 			// found closebrace Token
 			sendCurrentTokens()
 			s.tokens = append(s.tokens, Token{TokenType: BRACE, Value: string(currentChar), Position: i})
+		case '-':
+			fallthrough
 		case '=':
 			fallthrough
 		case '<':
